@@ -1,0 +1,100 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@3.9.1">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>https://github.com/kushtawar/productcrudapp.git</url>
+        <credentialsId>gitcredentials</credentialsId>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>*/master</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>cd $WORKSPACE/medangularapp
+echo &quot;PWD: &quot;$PWD
+REGION=ap-south-1
+REPOSITORY_NAME=meanmedrepo
+
+
+
+CLUSTER=productioncluster
+FAMILY=`sed -n &apos;s/.*&quot;family&quot;: &quot;\(.*\)&quot;,/\1/p&apos; taskdef.json`
+NAME=`sed -n &apos;s/.*&quot;name&quot;: &quot;\(.*\)&quot;,/\1/p&apos; taskdef.json`
+SERVICE_NAME=${NAME}-service
+#WORKSPACE=/Users/kushtawar/Documents/Tutorials/DockerMS/mean-medical/medangularapp
+
+#Store the repositoryUri as a variable
+REPOSITORY_URI=`aws ecr describe-repositories --repository-names ${REPOSITORY_NAME} --region ${REGION} | jq .repositories[].repositoryUri | tr -d &apos;&quot;&apos;`
+
+#Replace the build number and respository URI placeholders with the constants above
+sed -e &quot;s;%BUILD_NUMBER%;${BUILD_NUMBER};g&quot; -e &quot;s;%REPOSITORY_URI%;${REPOSITORY_URI};g&quot; taskdef.json &gt; ${NAME}-v_${BUILD_NUMBER}.json
+#Register the task definition in the repository
+aws ecs register-task-definition --family ${FAMILY} --cli-input-json file://${WORKSPACE}/medangularapp/${NAME}-v_${BUILD_NUMBER}.json --region ${REGION}
+SERVICES=`aws ecs describe-services --services ${SERVICE_NAME} --cluster ${CLUSTER} --region ${REGION} | jq .failures[]`
+
+aws ecs describe-services --services ${SERVICE_NAME} --cluster ${CLUSTER} --region ${REGION} &gt; temp.json
+mystatus=`jq &apos;.services[0].status&apos; temp.json`
+
+echo &quot;mystatus is:&quot;$mystatus
+
+#Get latest revision
+REVISION=`aws ecs describe-task-definition --task-definition ${FAMILY} --region ${REGION} | jq .taskDefinition.revision`
+
+
+#Create or update service
+if [ $mystatus == &apos;&quot;ACTIVE&quot;&apos; ]; then
+ echo &quot;entered existing service&quot;
+ DESIRED_COUNT=`aws ecs describe-services --services ${SERVICE_NAME} --cluster ${CLUSTER} --region ${REGION} | jq .services[].desiredCount`
+  if [ ${DESIRED_COUNT} == &quot;0&quot; ]; then
+   DESIRED_COUNT=&quot;1&quot;
+  fi
+ aws ecs update-service --cluster ${CLUSTER} --region ${REGION} --service ${SERVICE_NAME} --force-new-deployment  --task-definition ${FAMILY}:${REVISION} --desired-count ${DESIRED_COUNT}
+
+else 
+  aws ecs create-service --service-name ${SERVICE_NAME} --desired-count 1 --task-definition ${FAMILY} --cluster ${CLUSTER} --region ${REGION}
+  echo &quot;entered new service&quot;
+fi
+
+
+#  aws ecs create-service --service-name ${SERVICE_NAME} --desired-count 1 --task-definition ${FAMILY} --cluster ${CLUSTER} --region ${REGION}
+#  echo &quot;entered new service&quot;
+
+tasks=$(aws --region ${REGION} ecs list-tasks  --cluster $CLUSTER | jq -r &apos;.taskArns | map(.[40:]) | reduce .[] as $item (&quot;&quot;; . + $item + &quot; &quot;)&apos;)
+for task in $tasks; do
+taskid=$(echo  &quot;$task&quot; | cut -c 2-)
+	 aws ecs  stop-task --task $taskid --region ${REGION}  --cluster $CLUSTER
+done</command>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers>
+    <hudson.tasks.BuildTrigger>
+      <childProjects>prod_sanity_test</childProjects>
+      <threshold>
+        <name>SUCCESS</name>
+        <ordinal>0</ordinal>
+        <color>BLUE</color>
+        <completeBuild>true</completeBuild>
+      </threshold>
+    </hudson.tasks.BuildTrigger>
+  </publishers>
+  <buildWrappers/>
+</project>

@@ -1,0 +1,114 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Docker images would be built in Test ENV whenever there is a code change committed to GITHUB&#xd;
+Integration tests would be run on complete application (combination of 3 microservices which are available in three docker images)&#xd;
+Finally images would be deployed to deployed to production instance (AWS Cloud)&#xd;
+Sanity tests would be performed on the production instance.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>RUNENV</name>
+          <description>DEFINE</description>
+          <defaultValue>test</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>RUNINSTANCEURL</name>
+          <description></description>
+          <defaultValue>http://localhost:4200</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>RUNINSTANCEURLCORS</name>
+          <description></description>
+          <defaultValue>http://localhost:3000</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@3.9.1">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>https://github.com/kushtawar/productcrudapp.git</url>
+        <credentialsId>gitcredentials</credentialsId>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>*/master</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers>
+    <hudson.triggers.SCMTrigger>
+      <spec>* * * * *</spec>
+      <ignorePostCommitHooks>false</ignorePostCommitHooks>
+    </hudson.triggers.SCMTrigger>
+  </triggers>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>cd $WORKSPACE/medangularapp
+tee env.json &lt;&lt; END
+{
+    &quot;env&quot;:&quot;$RUNENV&quot;, 
+    &quot;instanceurl&quot;:&quot;$RUNINSTANCEURL&quot;,
+    &quot;instanceurlcors&quot;:&quot;$RUNINSTANCEURLCORS&quot;   
+}
+END
+
+cd $WORKSPACE/mednodeexpress
+tee env.json &lt;&lt; END
+{
+    &quot;env&quot;:&quot;$RUNENV&quot;, 
+    &quot;instanceurl&quot;:&quot;$RUNINSTANCEURL&quot;,
+    &quot;instanceurlcors&quot;:&quot;$RUNINSTANCEURLCORS&quot;   
+}
+END</command>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>lsof -nP -i4TCP:4200 | grep LISTEN | awk &apos;{print $2}&apos;|xargs kill
+cd $WORKSPACE/medangularapp
+nohup npm start &amp;
+sleep 20
+echo &quot;The angular job has been started&quot;
+lsof -nP -i4TCP:3000 | grep LISTEN | awk &apos;{print $2}&apos;|xargs kill
+cd $WORKSPACE/mednodeexpress
+#killall -9 node
+BUILD_ID=dontKillMe forever start server.js &amp;
+sleep 20
+echo &quot;The node job has been started&quot;
+</command>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers>
+    <hudson.tasks.BuildTrigger>
+      <childProjects>E2ETest_Medunglar</childProjects>
+      <threshold>
+        <name>SUCCESS</name>
+        <ordinal>0</ordinal>
+        <color>BLUE</color>
+        <completeBuild>true</completeBuild>
+      </threshold>
+    </hudson.tasks.BuildTrigger>
+  </publishers>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.34">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>
